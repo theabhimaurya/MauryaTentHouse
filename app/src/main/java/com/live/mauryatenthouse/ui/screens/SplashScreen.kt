@@ -91,10 +91,10 @@ fun SplashScreen(navController: NavController) {
                 fontWeight = FontWeight.Bold,
                 color = Maroon
             )
-
+            Spacer(modifier = Modifier.height(8.dp))
             // Hindi Title
             Text(
-                text = "मौर्य टेंट हाउस",
+                text = "मौर्या टेंट हाउस",
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = devanagariFont,
@@ -133,7 +133,7 @@ fun SplashScreen(navController: NavController) {
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                text = "Version 1.0 (Offline Mode)",
+                text = "Version 1.0",
                 fontSize = 12.sp,
                 color = Color.Gray
             )
@@ -147,7 +147,7 @@ fun SplashScreen(navController: NavController) {
                 )
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(
-                    text = "Local Storage Active",
+                    text = "@Mauryatenthouse",
                     fontSize = 12.sp,
                     color = Maroon.copy(alpha = 0.6f)
                 )

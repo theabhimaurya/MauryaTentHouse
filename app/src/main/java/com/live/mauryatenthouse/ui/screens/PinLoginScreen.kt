@@ -124,8 +124,9 @@ fun PinLoginScreen(navController: NavController) {
                 color = Maroon,
                 textAlign = TextAlign.Center
             )
+            Spacer(modifier = Modifier.height(8.dp))
             Text(
-                "मौर्य टेंट हाउस",
+                "मौर्या टेंट हाउस",
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = devanagariFont,

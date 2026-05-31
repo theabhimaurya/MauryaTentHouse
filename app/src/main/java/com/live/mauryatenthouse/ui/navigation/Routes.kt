@@ -5,5 +5,7 @@ object Routes {
     const val PIN = "pin"
     const val HOME = "home"
     const val INVOICE = "invoice"
-    const val INVOICE_PREVIEW = "invoice_preview"
+    const val INVOICE_PREVIEW = "invoice_preview/{isReadOnly}"
+    
+    fun invoicePreview(isReadOnly: Boolean) = "invoice_preview/$isReadOnly"
 }

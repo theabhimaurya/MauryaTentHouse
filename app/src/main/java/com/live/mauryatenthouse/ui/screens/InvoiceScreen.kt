@@ -1,6 +1,7 @@
 package com.live.mauryatenthouse.ui.screens
 
 import android.app.DatePickerDialog
+import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -21,6 +22,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
@@ -56,13 +59,15 @@ fun InvoiceScreen(viewModel: InvoiceViewModel = viewModel(), navController: NavC
 
     var showDatePicker by remember { mutableStateOf(false) }
 
+    Log.d("viewModel", "InvoiceScreen: ${viewModel.editingInvoiceId}")
+
     Scaffold(
         containerColor = OffWhite,
         topBar = {
             TopAppBar(
                 title = {
                     Text(
-                        "New Invoice / नया बिल",
+                        if (viewModel.editingInvoiceId == null) "New Invoice / नया बिल" else "Update Invoice / बिल बदलें",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                         color = Maroon,
@@ -186,11 +191,13 @@ fun InvoiceScreen(viewModel: InvoiceViewModel = viewModel(), navController: NavC
                                     discount = viewModel.discount.toDoubleOrNull() ?: 0.0
                                 )
                                 InvoiceHolder.currentInvoice = invoice
-                                navController.navigate(Routes.INVOICE_PREVIEW)
+                                navController.navigate(Routes.invoicePreview(false))
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = Maroon),
                             shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.height(56.dp).fillMaxWidth(0.7f)
+                            modifier = Modifier
+                                .height(56.dp)
+                                .fillMaxWidth(0.7f)
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text("Generate & Preview / बिल\nबनाएं और देखें", textAlign = TextAlign.Center, fontSize = 14.sp, fontFamily = devanagariFont)
@@ -231,7 +238,7 @@ fun InvoiceScreen(viewModel: InvoiceViewModel = viewModel(), navController: NavC
             Spacer(Modifier.height(16.dp))
 
             // 2. Customer Details
-            CollapsibleSection(title = "2. Customer Details") {
+            CollapsibleSection(title = "2. Customer Details / ग्राहक विवरण") {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Surface(
                         modifier = Modifier.size(60.dp),
@@ -242,7 +249,7 @@ fun InvoiceScreen(viewModel: InvoiceViewModel = viewModel(), navController: NavC
                     }
                     Spacer(Modifier.width(16.dp))
                     Column {
-                        Text("Name", fontSize = 12.sp, color = Color.Gray)
+                        Text("Name / नाम", fontSize = 12.sp, color = Color.Gray)
                         EditableText(
                             value = viewModel.customerName,
                             onValueChange = { viewModel.customerName = it },
@@ -254,7 +261,7 @@ fun InvoiceScreen(viewModel: InvoiceViewModel = viewModel(), navController: NavC
                 Spacer(Modifier.height(16.dp))
                 Row(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Phone / PHONE", fontSize = 12.sp, color = Color.Gray)
+                        Text("Phone / फ़ोन", fontSize = 12.sp, color = Color.Gray)
                         EditableText(
                             value = viewModel.customerPhone,
                             onValueChange = { viewModel.customerPhone = it },
@@ -263,7 +270,7 @@ fun InvoiceScreen(viewModel: InvoiceViewModel = viewModel(), navController: NavC
                         )
                     }
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("पता / ADDRESS", fontSize = 12.sp, color = Color.Gray, fontFamily = devanagariFont)
+                        Text("ADDRESS / पता", fontSize = 12.sp, color = Color.Gray, fontFamily = devanagariFont)
                         EditableText(
                             value = viewModel.customerAddress,
                             onValueChange = { viewModel.customerAddress = it },
@@ -277,7 +284,7 @@ fun InvoiceScreen(viewModel: InvoiceViewModel = viewModel(), navController: NavC
             Spacer(Modifier.height(16.dp))
 
             // 3. Event Name
-            CollapsibleSection(title = "3. Event Name") {
+            CollapsibleSection(title = "3. Event Name / कार्यक्रम") {
                 EventDropdown(
                     selectedEvent = viewModel.customerEvent,
                     onEventSelected = { viewModel.customerEvent = it },
@@ -288,7 +295,7 @@ fun InvoiceScreen(viewModel: InvoiceViewModel = viewModel(), navController: NavC
             Spacer(Modifier.height(16.dp))
 
             // 4. Item Adder
-            CollapsibleSection(title = "4. Item Adder") {
+            CollapsibleSection(title = "4. Item Adder / सामान सूची") {
                 ItemAdderUI(
                     onAddItem = { desc, qty, price -> viewModel.addItem(desc, qty, price) },
                     fontFamily = devanagariFont
@@ -298,7 +305,7 @@ fun InvoiceScreen(viewModel: InvoiceViewModel = viewModel(), navController: NavC
             Spacer(Modifier.height(16.dp))
 
             // 5. Wages/Freight
-            CollapsibleSection(title = "5. Wages/Freight") {
+            CollapsibleSection(title = "5. Wages/Freight || मजदूरी / भाड़ा") {
                 OutlinedTextField(
                     value = viewModel.laborWages,
                     onValueChange = { if (it.all { char -> char.isDigit() }) viewModel.laborWages = it },
@@ -347,13 +354,16 @@ fun InvoiceScreen(viewModel: InvoiceViewModel = viewModel(), navController: NavC
                     Column {
                         viewModel.items.forEachIndexed { index, item ->
                             Row(
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text("${index + 1}. ${item.description}", modifier = Modifier.weight(1f))
-                                Text("x${item.qty}", modifier = Modifier.padding(horizontal = 8.dp))
-                                Text("₹${item.total.toInt()}")
+                                Text("${item.unitPrice.toInt()}", modifier = Modifier.padding(horizontal = 8.dp))
+                                Text("x${item.qty}")
+                                Text("₹${item.total.toInt()}", modifier = Modifier.padding(start = 20.dp))
                                 IconButton(onClick = { viewModel.removeItem(index) }, modifier = Modifier.size(24.dp)) {
                                     Icon(Icons.Default.Close, contentDescription = "Remove", tint = Maroon, modifier = Modifier.size(16.dp))
                                 }
@@ -433,6 +443,8 @@ fun EditableText(
     keyboardType: KeyboardType = KeyboardType.Text
 ) {
     var isEditing by remember { mutableStateOf(false) }
+    val focusRequester = remember { FocusRequester() }
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -448,7 +460,8 @@ fun EditableText(
                 onValueChange = onValueChange,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 4.dp),
+                    .padding(vertical = 4.dp)
+                    .focusRequester(focusRequester),
                 textStyle = textStyle,
                 keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
                 singleLine = true,
@@ -463,6 +476,11 @@ fun EditableText(
                     innerTextField()
                 }
             )
+
+            LaunchedEffect(Unit) {
+                focusRequester.requestFocus()
+            }
+
             DisposableEffect(Unit) {
                 onDispose { isEditing = false }
             }
@@ -544,7 +562,9 @@ fun EventDropdown(
             readOnly = true,
             label = { Text("Event Type / कार्यक्रम का नाम", fontFamily = fontFamily) },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-            modifier = Modifier.menuAnchor().fillMaxWidth()
+            modifier = Modifier
+                .menuAnchor()
+                .fillMaxWidth()
         )
         ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             events.forEach { event ->
@@ -635,7 +655,9 @@ fun ItemAdderUI(
                 label = { Text("Item / सामान", fontFamily = fontFamily) },
                 placeholder = { Text("Select Item / सामान चुनें", fontFamily = fontFamily) },
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-                modifier = Modifier.menuAnchor().fillMaxWidth()
+                modifier = Modifier
+                    .menuAnchor()
+                    .fillMaxWidth()
             )
             ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                 itemList.forEach { item ->

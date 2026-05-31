@@ -5,11 +5,13 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.live.mauryatenthouse.ui.navigation.Routes
 import com.live.mauryatenthouse.ui.screens.HomeScreen
 import com.live.mauryatenthouse.ui.screens.InvoicePreviewScreen
@@ -17,6 +19,7 @@ import com.live.mauryatenthouse.ui.screens.InvoiceScreen
 import com.live.mauryatenthouse.ui.screens.PinLoginScreen
 import com.live.mauryatenthouse.ui.screens.SplashScreen
 import com.live.mauryatenthouse.ui.theme.MauryaTentHouseTheme
+import com.live.mauryatenthouse.ui.viewmodel.InvoiceViewModel
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -33,6 +36,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun AppNavGraph() {
     val navController = rememberNavController()
+    val invoiceViewModel: InvoiceViewModel = viewModel()
 
 
     NavHost(
@@ -46,13 +50,21 @@ fun AppNavGraph() {
             PinLoginScreen(navController)
         }
         composable(Routes.HOME) {
-            HomeScreen(navController)
+            HomeScreen(viewModel = invoiceViewModel, navController = navController)
         }
         composable(Routes.INVOICE) {
-            InvoiceScreen(navController = navController)
+            InvoiceScreen(viewModel = invoiceViewModel, navController = navController)
         }
-        composable(Routes.INVOICE_PREVIEW) {
-            InvoicePreviewScreen(navController)
+        composable(
+            route = Routes.INVOICE_PREVIEW,
+            arguments = listOf(navArgument("isReadOnly") { type = NavType.BoolType })
+        ) { backStackEntry ->
+            val isReadOnly = backStackEntry.arguments?.getBoolean("isReadOnly") ?: false
+            InvoicePreviewScreen(
+                viewModel = invoiceViewModel,
+                navController = navController,
+                isReadOnly = isReadOnly
+            )
         }
     }
 }

@@ -37,6 +37,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.navigation.NavController
@@ -45,13 +46,20 @@ import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.live.mauryatenthouse.R
 import com.live.mauryatenthouse.domain.model.Invoice
 import com.live.mauryatenthouse.domain.model.InvoiceItem
+import com.live.mauryatenthouse.ui.navigation.Routes
 import com.live.mauryatenthouse.ui.theme.MauryaTentHouseTheme
+import com.live.mauryatenthouse.ui.viewmodel.InvoiceViewModel
+import com.live.mauryatenthouse.utils.showToast
 import java.io.File
 import java.io.FileOutputStream
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun InvoicePreviewScreen(navController: NavController) {
+fun InvoicePreviewScreen(
+    viewModel: InvoiceViewModel = viewModel(),
+    navController: NavController,
+    isReadOnly: Boolean = false
+) {
     val context = LocalContext.current
     val invoice = InvoiceHolder.currentInvoice ?: return
     val devanagariFont = FontFamily(Font(resId = R.font.devanagari_regular, weight = FontWeight.Normal))
@@ -140,6 +148,25 @@ fun InvoicePreviewScreen(navController: NavController) {
 
             Spacer(modifier = Modifier.height(16.dp))
 
+            if (!isReadOnly) {
+                InvoiceActionCard(
+                    title = "Save Invoice",
+                    subtitle = "Sync to local database",
+                    icon = Icons.Default.ShoppingCart,
+                    color = Color(0xFF004D61),
+                    onClick = {
+                        viewModel.saveInvoice(invoice) {
+                            showToast(context, "Invoice Saved Successfully")
+                            navController.navigate(Routes.HOME) {
+                                popUpTo(Routes.HOME) { inclusive = true }
+                            }
+                        }
+                    }
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+
             // Action Buttons Row 2
             InvoiceActionCard(
                 title = "Quick Print",
@@ -226,8 +253,9 @@ fun InvoiceOutPutUI(invoice: Invoice) {
                 fontWeight = FontWeight.Bold,
                 color = Maroon
             )
+            Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "मौर्य टेंट हाउस",
+                text = "मौर्या टेंट हाउस",
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
                 color = Maroon,
@@ -245,7 +273,7 @@ fun InvoiceOutPutUI(invoice: Invoice) {
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text(text = "प्रो० अमर बहादुर मौर्य", fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = devanagariFont)
+                Text(text = "प्रो० अमर बहादुर मौर्या", fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = devanagariFont)
                 Text(text = "मो० 9415807288", fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = devanagariFont)
             }
             Spacer(modifier = Modifier.height(4.dp))
@@ -257,12 +285,13 @@ fun InvoiceOutPutUI(invoice: Invoice) {
         // Info Row 1
         Row(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.weight(1f)) {
-                Text("DATE / दिनांक", fontSize = 10.sp, color = Color.Gray, fontFamily = devanagariFont)
-                Text(invoice.date, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-            }
-            Column(modifier = Modifier.weight(1f)) {
                 Text("CUSTOMER / ग्राहक", fontSize = 10.sp, color = Color.Gray, fontFamily = devanagariFont)
                 Text(invoice.customerName, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            }
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text("DATE / दिनांक", fontSize = 10.sp, color = Color.Gray, fontFamily = devanagariFont)
+                Text(invoice.date, fontSize = 14.sp, fontWeight = FontWeight.Bold)
             }
         }
 
@@ -314,7 +343,7 @@ fun InvoiceOutPutUI(invoice: Invoice) {
             // Summary Section
             SummaryRow("मजदूरी राशि खर्च / Labor Wages:", "₹${invoice.laborWages.toInt()}", devanagariFont)
             SummaryRow("गाड़ी भाड़ा खर्च / Transport Freight:", "₹${invoice.transportFreight.toInt()}", devanagariFont)
-            SummaryRow("छूट / Discount:", "₹${invoice.discount.toInt()}", devanagariFont)
+            SummaryRow("छूट / Discount:", "- ₹${invoice.discount.toInt()}", devanagariFont)
             
             Row(
                 modifier = Modifier.background(Color(0xFFFFF3F3)).padding(12.dp),

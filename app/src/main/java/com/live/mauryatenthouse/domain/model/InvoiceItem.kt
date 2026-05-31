@@ -1,5 +1,8 @@
 package com.live.mauryatenthouse.domain.model
 
+import kotlinx.serialization.Serializable
+
+@Serializable
 data class InvoiceItem(
     val serial: Int? = 0,
     val description: String,
