@@ -46,7 +46,9 @@ fun AppNavGraph() {
             PinLoginScreen(navController)
         }
         composable(Routes.HOME) {
-//            HomeScreen()
+            HomeScreen(navController)
+        }
+        composable(Routes.INVOICE) {
             InvoiceScreen(navController = navController)
         }
         composable(Routes.INVOICE_PREVIEW) {

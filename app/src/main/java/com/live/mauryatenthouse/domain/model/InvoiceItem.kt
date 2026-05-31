@@ -17,8 +17,14 @@ data class Invoice(
     val customerPhone: String,
     val invoiceNo: String,
     val date: String,
-    val items: List<InvoiceItem>
+    val items: List<InvoiceItem>,
+    val laborWages: Double = 0.0,
+    val transportFreight: Double = 0.0,
+    val discount: Double = 0.0
 ) {
     val subTotal: Double
         get() = items.sumOf { it.total }
+
+    val grandTotal: Double
+        get() = subTotal + laborWages + transportFreight - discount
 }
