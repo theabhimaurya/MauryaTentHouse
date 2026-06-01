@@ -8,14 +8,15 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.Font
@@ -44,6 +45,16 @@ fun HomeScreen(viewModel: InvoiceViewModel = viewModel(), navController: NavCont
 
     val savedInvoices by viewModel.allInvoices.collectAsState(initial = null)
     var invoiceToDelete by remember { mutableStateOf<InvoiceEntity?>(null) }
+    var fabExpanded by remember { mutableStateOf(false) }
+    var selectedTabIndex by remember { mutableIntStateOf(0) }
+    val tabs = listOf("Invoices / बिल", "Bookings / बुकिंग")
+
+    val filteredList = remember(savedInvoices, selectedTabIndex) {
+        savedInvoices?.filter { 
+            if (selectedTabIndex == 0) it.invoiceNo.startsWith("INV") 
+            else it.invoiceNo.startsWith("BKG")
+        }
+    }
 
     if (invoiceToDelete != null) {
         AlertDialog(
@@ -107,17 +118,21 @@ fun HomeScreen(viewModel: InvoiceViewModel = viewModel(), navController: NavCont
             )
         },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = {
+            ExpandableFab(
+                expanded = fabExpanded,
+                onFabClick = { fabExpanded = !fabExpanded },
+                onBookingClick = {
+                    fabExpanded = false
+                    viewModel.resetForm()
+                    navController.navigate(Routes.BOOKING)
+                },
+                onInvoiceClick = {
+                    fabExpanded = false
                     viewModel.resetForm()
                     navController.navigate(Routes.INVOICE)
                 },
-                containerColor = Maroon,
-                contentColor = Color.White,
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Add")
-            }
+                fontFamily = devanagariFont
+            )
         }
     ) { paddingValues ->
         Column(
@@ -141,6 +156,36 @@ fun HomeScreen(viewModel: InvoiceViewModel = viewModel(), navController: NavCont
             )
             Spacer(modifier = Modifier.height(16.dp))
 
+            TabRow(
+                selectedTabIndex = selectedTabIndex,
+                containerColor = Color.Transparent,
+                contentColor = Maroon,
+                indicator = { tabPositions ->
+                    TabRowDefaults.SecondaryIndicator(
+                        Modifier.tabIndicatorOffset(tabPositions[selectedTabIndex]),
+                        color = Maroon
+                    )
+                },
+                divider = {}
+            ) {
+                tabs.forEachIndexed { index, title ->
+                    Tab(
+                        selected = selectedTabIndex == index,
+                        onClick = { selectedTabIndex = index },
+                        text = {
+                            Text(
+                                text = title,
+                                fontSize = 14.sp,
+                                fontWeight = if (selectedTabIndex == index) FontWeight.Bold else FontWeight.Normal,
+                                fontFamily = devanagariFont
+                            )
+                        }
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
             if (savedInvoices == null) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
@@ -148,7 +193,7 @@ fun HomeScreen(viewModel: InvoiceViewModel = viewModel(), navController: NavCont
                 ) {
                     CircularProgressIndicator(color = Maroon)
                 }
-            } else if (savedInvoices!!.isEmpty()) {
+            } else if (filteredList.isNullOrEmpty()) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
@@ -160,13 +205,13 @@ fun HomeScreen(viewModel: InvoiceViewModel = viewModel(), navController: NavCont
                         Image(
                             painter = painterResource(id = R.drawable.no_invoice),
                             contentDescription = null,
-                            modifier = Modifier.size(240.dp),
+                            modifier = Modifier.size(200.dp),
                             contentScale = ContentScale.Fit
                         )
                         Spacer(modifier = Modifier.height(24.dp))
                         Text(
-                            text = "No Invoices Found / कोई बिल नहीं मिला",
-                            fontSize = 20.sp,
+                            text = if (selectedTabIndex == 0) "No Invoices Found / कोई बिल नहीं मिला" else "No Bookings Found / कोई बुकिंग नहीं मिली",
+                            fontSize = 18.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color.Black,
                             textAlign = TextAlign.Center,
@@ -174,12 +219,12 @@ fun HomeScreen(viewModel: InvoiceViewModel = viewModel(), navController: NavCont
                         )
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
-                            text = "Your saved bookings and history will appear here once you create a new invoice. / जब आप नया बिल बनाएंगे तो आपकी बुकिंग और इतिहास यहाँ दिखाई देगा।",
-                            fontSize = 14.sp,
+                            text = if (selectedTabIndex == 0) "Your saved invoices will appear here. / आपके सुरक्षित किए गए बिल यहाँ दिखाई देंगे।" else "Your saved bookings will appear here. / आपकी सुरक्षित की गई बुकिंग यहाँ दिखाई देंगी।",
+                            fontSize = 13.sp,
                             color = Color.Gray,
                             textAlign = TextAlign.Center,
                             modifier = Modifier.padding(horizontal = 24.dp),
-                            lineHeight = 20.sp,
+                            lineHeight = 18.sp,
                             fontFamily = devanagariFont
                         )
                     }
@@ -189,7 +234,7 @@ fun HomeScreen(viewModel: InvoiceViewModel = viewModel(), navController: NavCont
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                     contentPadding = PaddingValues(bottom = 80.dp)
                 ) {
-                    items(savedInvoices!!) { invoiceEntity ->
+                    items(filteredList) { invoiceEntity ->
                         InvoiceCard(
                             invoice = invoiceEntity,
                             font = devanagariFont,
@@ -207,12 +252,20 @@ fun HomeScreen(viewModel: InvoiceViewModel = viewModel(), navController: NavCont
                                     discount = invoiceEntity.discount
                                 )
                                 InvoiceHolder.currentInvoice = invoice
-                                navController.navigate(Routes.invoicePreview(true))
+                                if (invoiceEntity.invoiceNo.startsWith("INV")) {
+                                    navController.navigate(Routes.invoicePreview(true))
+                                } else {
+                                    navController.navigate(Routes.BOOKING_PREVIEW)
+                                }
                             },
                             onDelete = { invoiceToDelete = invoiceEntity },
                             onEdit = {
                                 viewModel.loadInvoiceForEditing(invoiceEntity)
-                                navController.navigate(Routes.INVOICE)
+                                if (invoiceEntity.invoiceNo.startsWith("INV")) {
+                                    navController.navigate(Routes.INVOICE)
+                                } else {
+                                    navController.navigate(Routes.BOOKING)
+                                }
                             }
                         )
                     }
@@ -286,7 +339,11 @@ fun InvoiceCard(invoice: InvoiceEntity, font: FontFamily, onClick: () -> Unit, o
                 verticalAlignment = Alignment.Bottom
             ) {
                 Column {
-                    Text(text = "Invoice No:", fontSize = 12.sp, color = Color.Gray)
+                    Text(
+                        text = if (invoice.invoiceNo.startsWith("BKG")) "Booking No:" else "Invoice No:",
+                        fontSize = 12.sp,
+                        color = Color.Gray
+                    )
                     Text(
                         text = invoice.invoiceNo,
                         fontSize = 16.sp,
@@ -295,16 +352,98 @@ fun InvoiceCard(invoice: InvoiceEntity, font: FontFamily, onClick: () -> Unit, o
                         fontFamily = font
                     )
                 }
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(text = "Total Amount / कुल राशि", fontSize = 12.sp, color = Color.Gray, fontFamily = font)
-                    Text(
-                        text = "₹${invoice.grandTotal.toInt()}",
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = Maroon
-                    )
+                if (!invoice.invoiceNo.startsWith("BKG")) {
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(text = "Total Amount / कुल राशि", fontSize = 12.sp, color = Color.Gray, fontFamily = font)
+                        Text(
+                            text = "₹${invoice.grandTotal.toInt()}",
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = Maroon
+                        )
+                    }
                 }
             }
+        }
+    }
+}
+
+@Composable
+fun ExpandableFab(
+    expanded: Boolean,
+    onFabClick: () -> Unit,
+    onBookingClick: () -> Unit,
+    onInvoiceClick: () -> Unit,
+    fontFamily: FontFamily
+) {
+    Column(
+        horizontalAlignment = Alignment.End,
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        if (expanded) {
+            FabSubItem(
+                label = "Create Booking / बुकिंग बनाएँ",
+                icon = Icons.Default.DateRange,
+                onClick = onBookingClick,
+                fontFamily = fontFamily
+            )
+            FabSubItem(
+                label = "Create New Invoice / नया बिल बनाएँ",
+                icon = Icons.AutoMirrored.Filled.List,
+                onClick = onInvoiceClick,
+                fontFamily = fontFamily
+            )
+        }
+
+        FloatingActionButton(
+            onClick = onFabClick,
+            containerColor = Maroon,
+            contentColor = Color.White,
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Icon(
+                imageVector = if (expanded) Icons.Default.Close else Icons.Default.Add,
+                contentDescription = if (expanded) "Close" else "Add",
+                modifier = Modifier.size(24.dp)
+            )
+        }
+    }
+}
+
+@Composable
+fun FabSubItem(
+    label: String,
+    icon: ImageVector,
+    onClick: () -> Unit,
+    fontFamily: FontFamily
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Surface(
+            shape = RoundedCornerShape(4.dp),
+            color = Color(0xFFFDECEC), // Light pinkish background from image
+            modifier = Modifier.clickable(onClick = onClick)
+        ) {
+            Text(
+                text = label,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = fontFamily,
+                color = Color.Black
+            )
+        }
+
+        FloatingActionButton(
+            onClick = onClick,
+            containerColor = Maroon,
+            contentColor = Color.White,
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.size(48.dp) // Smaller than main FAB
+        ) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
         }
     }
 }

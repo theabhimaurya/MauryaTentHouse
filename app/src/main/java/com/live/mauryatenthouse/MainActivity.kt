@@ -16,6 +16,8 @@ import com.live.mauryatenthouse.ui.navigation.Routes
 import com.live.mauryatenthouse.ui.screens.HomeScreen
 import com.live.mauryatenthouse.ui.screens.InvoicePreviewScreen
 import com.live.mauryatenthouse.ui.screens.InvoiceScreen
+import com.live.mauryatenthouse.ui.screens.CreateBookingScreen
+import com.live.mauryatenthouse.ui.screens.BookingPreviewScreen
 import com.live.mauryatenthouse.ui.screens.PinLoginScreen
 import com.live.mauryatenthouse.ui.screens.SplashScreen
 import com.live.mauryatenthouse.ui.theme.MauryaTentHouseTheme
@@ -54,6 +56,12 @@ fun AppNavGraph() {
         }
         composable(Routes.INVOICE) {
             InvoiceScreen(viewModel = invoiceViewModel, navController = navController)
+        }
+        composable(Routes.BOOKING) {
+            CreateBookingScreen(viewModel = invoiceViewModel, navController = navController)
+        }
+        composable(Routes.BOOKING_PREVIEW) {
+            BookingPreviewScreen(viewModel = invoiceViewModel, navController = navController)
         }
         composable(
             route = Routes.INVOICE_PREVIEW,
