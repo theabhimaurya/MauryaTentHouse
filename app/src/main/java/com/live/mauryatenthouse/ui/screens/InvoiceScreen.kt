@@ -590,6 +590,8 @@ fun ItemAdderUI(
     var selectedItem by remember { mutableStateOf("") }
     var qty by remember { mutableStateOf("") }
     var price by remember { mutableStateOf("") }
+    var showCustomItemDialog by remember { mutableStateOf(false) }
+    var customItemName by remember { mutableStateOf("") }
 
     val itemList = listOf(
         "चारपाई",
@@ -643,6 +645,45 @@ fun ItemAdderUI(
         "अन्य"
     )
 
+    if (showCustomItemDialog) {
+        AlertDialog(
+            onDismissRequest = { showCustomItemDialog = false },
+            title = { Text("Add Custom Item / सामान जोड़ें", fontFamily = fontFamily, fontWeight = FontWeight.Bold) },
+            text = {
+                OutlinedTextField(
+                    value = customItemName,
+                    onValueChange = { customItemName = it },
+                    label = { Text("Enter Item Name / सामान का नाम लिखें", fontFamily = fontFamily) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Maroon,
+                        unfocusedBorderColor = Color.Gray
+                    )
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (customItemName.isNotBlank()) {
+                            selectedItem = customItemName
+                            customItemName = ""
+                            showCustomItemDialog = false
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Maroon)
+                ) {
+                    Text("ADD")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCustomItemDialog = false }) {
+                    Text("CANCEL", color = Color.Gray)
+                }
+            }
+        )
+    }
+
     Column {
         ExposedDropdownMenuBox(
             expanded = expanded,
@@ -664,7 +705,11 @@ fun ItemAdderUI(
                     DropdownMenuItem(
                         text = { Text(item, fontFamily = fontFamily) },
                         onClick = {
-                            selectedItem = item
+                            if (item == "अन्य") {
+                                showCustomItemDialog = true
+                            } else {
+                                selectedItem = item
+                            }
                             expanded = false
                         }
                     )

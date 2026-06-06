@@ -1,9 +1,15 @@
 package com.live.mauryatenthouse.ui.screens
 
+import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
 import android.graphics.pdf.PdfDocument
+import android.os.Build
 import android.os.Environment
+import android.provider.MediaStore
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
@@ -52,6 +58,12 @@ import com.live.mauryatenthouse.ui.viewmodel.InvoiceViewModel
 import com.live.mauryatenthouse.utils.showToast
 import java.io.File
 import java.io.FileOutputStream
+
+// ─── CONSTANTS ────────────────────────────────────────────────────────────────
+// A4 dimensions in PDF points (1 pt = 1/72 inch). These are the ONLY values
+// the PdfDocument page should ever be built with. Never multiply by density.
+private const val A4_WIDTH_PT  = 595
+private const val A4_HEIGHT_PT = 842
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -103,7 +115,6 @@ fun InvoicePreviewScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp)
         ) {
-            // Paper-like Invoice Card
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(4.dp),
@@ -115,7 +126,6 @@ fun InvoicePreviewScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Action Buttons Row 1
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -167,7 +177,6 @@ fun InvoicePreviewScreen(
                 Spacer(modifier = Modifier.height(12.dp))
             }
 
-            // Action Buttons Row 2
             InvoiceActionCard(
                 title = "Quick Print",
                 subtitle = "Established offline connection",
@@ -180,11 +189,13 @@ fun InvoicePreviewScreen(
 
             InvoiceActionCard(
                 title = "Save PDF",
-                subtitle = "Sync to local database",
+                subtitle = "Save to Downloads folder",
                 icon = Icons.Default.ShoppingCart,
                 color = Color(0xFF004D61),
                 onClick = {
-                    createInvoicePdfFromCompose(context, invoice)
+                    val saved = saveInvoicePdfToDownloads(context, invoice)
+                    if (saved) showToast(context, "PDF saved to Downloads")
+                    else showToast(context, "Failed to save PDF")
                 }
             )
 
@@ -192,6 +203,223 @@ fun InvoicePreviewScreen(
         }
     }
 }
+
+// ─── PDF GENERATION ───────────────────────────────────────────────────────────
+
+/**
+ * Page margin constants (in PDF points).
+ * PAGE_MARGIN_PT is added as blank white space at the bottom of every page
+ * and at the top of every continuation page, so content is never flush
+ * against the page edge at a break (fixes the S.No.16→17 cut-off issue).
+ */
+private const val PAGE_MARGIN_PT = 24   // ~8.5 mm breathing room at page breaks
+
+fun createInvoicePdfFromCompose(context: Context, invoice: Invoice): File {
+    val activity = context as ComponentActivity
+    val density  = context.resources.displayMetrics.density
+
+    // ── 1. Render width: A4 point-width × screen density for sharp text ───────
+    val renderWidth = (A4_WIDTH_PT * density).toInt()   // e.g. 595 × 3 = 1785 px
+
+    // ── 2. Attach ComposeView to the real window so fillMaxWidth() resolves ───
+    val decorView = activity.window.decorView as ViewGroup
+    val container = FrameLayout(context)
+    decorView.addView(
+        container,
+        FrameLayout.LayoutParams(renderWidth, ViewGroup.LayoutParams.WRAP_CONTENT)
+    )
+
+    val composeView = ComposeView(context).apply {
+        setViewTreeLifecycleOwner(activity)
+        setViewTreeViewModelStoreOwner(activity)
+        setViewTreeSavedStateRegistryOwner(activity)
+        setContent {
+            Surface(color = Color.White, modifier = Modifier.fillMaxWidth()) {
+                InvoiceOutPutUI(invoice = invoice)
+            }
+        }
+    }
+    container.addView(
+        composeView,
+        FrameLayout.LayoutParams(renderWidth, ViewGroup.LayoutParams.WRAP_CONTENT)
+    )
+
+    // ── 3. Synchronous measure + layout ───────────────────────────────────────
+    composeView.measure(
+        View.MeasureSpec.makeMeasureSpec(renderWidth, View.MeasureSpec.EXACTLY),
+        View.MeasureSpec.makeMeasureSpec(0,           View.MeasureSpec.UNSPECIFIED)
+    )
+    val renderHeight = composeView.measuredHeight
+    composeView.layout(0, 0, renderWidth, renderHeight)
+
+    // ── 4. Draw into a Bitmap ─────────────────────────────────────────────────
+    val bitmap = Bitmap.createBitmap(renderWidth, renderHeight, Bitmap.Config.ARGB_8888)
+    val bitmapCanvas = Canvas(bitmap)
+    bitmapCanvas.drawColor(android.graphics.Color.WHITE)
+    composeView.draw(bitmapCanvas)
+
+    // ── 5. Tile bitmap across A4 pages WITH top/bottom margins ────────────────
+    //
+    //  scale         = how many PDF points equal 1 rendered pixel
+    //  scaledTotal   = full content height in PDF points
+    //  contentArea   = usable height per page after removing margins:
+    //                    • bottom margin on every page (content stops early)
+    //                    • top margin on pages 2+ (content starts lower)
+    //
+    //  Page layout per page:
+    //   ┌──────────────────────────┐  ← y=0  (top of PDF page)
+    //   │  top margin (page 2+)    │  PAGE_MARGIN_PT  (white, no bitmap)
+    //   ├──────────────────────────┤
+    //   │                          │
+    //   │   bitmap slice drawn     │  contentSlice pts tall
+    //   │        here              │
+    //   ├──────────────────────────┤
+    //   │  bottom margin           │  PAGE_MARGIN_PT  (white, no bitmap)
+    //   └──────────────────────────┘  ← y=A4_HEIGHT_PT
+
+    // scale: PDF points per rendered pixel (e.g. 595/1785 ≈ 0.333)
+    val scale       = A4_WIDTH_PT.toFloat() / renderWidth.toFloat()
+    val scaledTotal = (renderHeight * scale).toInt()
+
+    val pdfDocument = PdfDocument()
+    val paint       = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    val bgPaint     = Paint().apply { color = android.graphics.Color.WHITE }
+
+    // Maximum bitmap rows (in PDF points) we can show per page
+    fun contentSliceFor(isFirstPage: Boolean): Int {
+        val topMargin = if (isFirstPage) 0 else PAGE_MARGIN_PT
+        return A4_HEIGHT_PT - topMargin - PAGE_MARGIN_PT
+    }
+
+    var bitmapYPt  = 0   // PDF points of bitmap already consumed by previous pages
+    var pageNumber = 1
+
+    while (bitmapYPt < scaledTotal) {
+        val isFirstPage  = pageNumber == 1
+        val topMarginPt  = if (isFirstPage) 0 else PAGE_MARGIN_PT
+        val contentSlice = contentSliceFor(isFirstPage)
+
+        val remaining    = scaledTotal - bitmapYPt
+        val drawnContent = minOf(contentSlice, remaining)
+        val pageHeight   = topMarginPt + drawnContent + PAGE_MARGIN_PT
+
+        val pageInfo = PdfDocument.PageInfo.Builder(A4_WIDTH_PT, pageHeight, pageNumber).create()
+        val page     = pdfDocument.startPage(pageInfo)
+        val canvas   = page.canvas
+
+        // White background covers margin bands cleanly
+        canvas.drawRect(0f, 0f, A4_WIDTH_PT.toFloat(), pageHeight.toFloat(), bgPaint)
+
+        // ── Single drawBitmap call with explicit src and dst rects ────────────
+        // This avoids stacked translate/scale which caused the repeat bug.
+        //
+        // src (pixels): the exact horizontal strip of the bitmap for this page
+        //   top    = bitmapYPt / scale  → first pixel row for this page
+        //   bottom = (bitmapYPt + drawnContent) / scale  → last pixel row
+        //
+        // dst (PDF points): where to place that strip on the canvas
+        //   top    = topMarginPt
+        //   bottom = topMarginPt + drawnContent
+        // src must be integer Rect (pixel coordinates in the bitmap)
+        val srcTop    = (bitmapYPt / scale).toInt()
+        val srcBottom = ((bitmapYPt + drawnContent) / scale).toInt()
+
+        val src = android.graphics.Rect(0, srcTop, renderWidth, srcBottom)
+        // dst is integer Rect too (PDF point coordinates on the canvas)
+        val dst = android.graphics.Rect(
+            0, topMarginPt,
+            A4_WIDTH_PT, topMarginPt + drawnContent
+        )
+
+        canvas.drawBitmap(bitmap, src, dst, paint)
+
+        pdfDocument.finishPage(page)
+
+        bitmapYPt  += drawnContent
+        pageNumber++
+    }
+
+    // ── 6. Write PDF to disk ──────────────────────────────────────────────────
+    val file = File(
+        context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS),
+        "Invoice_${invoice.invoiceNo}.pdf"
+    )
+    pdfDocument.writeTo(FileOutputStream(file))
+    pdfDocument.close()
+    bitmap.recycle()
+
+    // ── 7. Clean up off-screen views ─────────────────────────────────────────
+    container.removeView(composeView)
+    decorView.removeView(container)
+
+    return file
+}
+
+// ─── SHARE ────────────────────────────────────────────────────────────────────
+
+fun sharePdf(context: Context, file: File) {
+    val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = "application/pdf"
+        putExtra(Intent.EXTRA_STREAM, uri)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    context.startActivity(Intent.createChooser(intent, "Share Invoice PDF"))
+}
+
+// ─── SAVE TO DOWNLOADS ────────────────────────────────────────────────────────
+
+/**
+ * Saves the invoice PDF to the public Downloads folder so it is visible
+ * in the phone's Files / Downloads app.
+ *
+ * Android 10+ (API 29+): uses MediaStore — no WRITE_EXTERNAL_STORAGE permission needed.
+ * Android 9  (API 28-): writes directly to Environment.DIRECTORY_DOWNLOADS.
+ *
+ * Returns true on success, false on any error.
+ */
+fun saveInvoicePdfToDownloads(context: Context, invoice: Invoice): Boolean {
+    return try {
+        val fileName = "Invoice_${invoice.invoiceNo}.pdf"
+        // Generate the PDF into the app's private cache first
+        val tempFile = createInvoicePdfFromCompose(context, invoice)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // ── Android 10+ : MediaStore API ─────────────────────────────────
+            val resolver = context.contentResolver
+            val contentValues = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                put(MediaStore.Downloads.MIME_TYPE, "application/pdf")
+                put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                put(MediaStore.Downloads.IS_PENDING, 1)
+            }
+            val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+                ?: return false
+
+            resolver.openOutputStream(uri)?.use { out ->
+                tempFile.inputStream().use { it.copyTo(out) }
+            }
+
+            contentValues.clear()
+            contentValues.put(MediaStore.Downloads.IS_PENDING, 0)
+            resolver.update(uri, contentValues, null, null)
+        } else {
+            // ── Android 9 and below : direct file write ───────────────────────
+            val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            downloadsDir.mkdirs()
+            val destFile = File(downloadsDir, fileName)
+            tempFile.inputStream().use { input ->
+                destFile.outputStream().use { input.copyTo(it) }
+            }
+        }
+        true
+    } catch (e: Exception) {
+        e.printStackTrace()
+        false
+    }
+}
+
+// ─── COMPOSABLES ──────────────────────────────────────────────────────────────
 
 @Composable
 fun InvoiceActionCard(
@@ -288,7 +516,6 @@ fun InvoiceOutPutUI(invoice: Invoice) {
                 Text("CUSTOMER / ग्राहक", fontSize = 10.sp, color = Color.Gray, fontFamily = devanagariFont)
                 Text(invoice.customerName, fontSize = 14.sp, fontWeight = FontWeight.Bold)
             }
-
             Column(modifier = Modifier.weight(1f)) {
                 Text("DATE / दिनांक", fontSize = 10.sp, color = Color.Gray, fontFamily = devanagariFont)
                 Text(invoice.date, fontSize = 14.sp, fontWeight = FontWeight.Bold)
@@ -312,9 +539,12 @@ fun InvoiceOutPutUI(invoice: Invoice) {
         Spacer(modifier = Modifier.height(24.dp))
 
         // Items Table
-        Column(modifier = Modifier.border(0.5.dp, Color.LightGray)) {
+        Column(modifier = Modifier.fillMaxWidth().border(0.5.dp, Color.LightGray)) {
             Row(
-                modifier = Modifier.background(Color(0xFFF5F5F5)).padding(vertical = 8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFFF5F5F5))
+                    .padding(vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text("S.No.", modifier = Modifier.weight(0.15f), textAlign = TextAlign.Center, fontWeight = FontWeight.Bold, fontSize = 11.sp)
@@ -328,10 +558,23 @@ fun InvoiceOutPutUI(invoice: Invoice) {
             HorizontalDivider(color = Color.LightGray, thickness = 0.5.dp)
 
             invoice.items.forEachIndexed { index, item ->
-                Row(modifier = Modifier.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Text("${index + 1}", modifier = Modifier.weight(0.15f), textAlign = TextAlign.Center, fontSize = 12.sp)
                     VerticalDivider(modifier = Modifier.height(20.dp), color = Color.LightGray)
-                    Text(item.description, modifier = Modifier.weight(0.55f), textAlign = TextAlign.Start, fontSize = 12.sp, modifier2 = Modifier.padding(start = 8.dp), fontFamily = devanagariFont)
+                    Text(
+                        item.description,
+                        modifier = Modifier
+                            .weight(0.55f)
+                            .padding(start = 8.dp),
+                        textAlign = TextAlign.Start,
+                        fontSize = 12.sp,
+                        fontFamily = devanagariFont
+                    )
                     VerticalDivider(modifier = Modifier.height(20.dp), color = Color.LightGray)
                     Text("${item.qty}", modifier = Modifier.weight(0.15f), textAlign = TextAlign.Center, fontSize = 12.sp)
                     VerticalDivider(modifier = Modifier.height(20.dp), color = Color.LightGray)
@@ -340,13 +583,15 @@ fun InvoiceOutPutUI(invoice: Invoice) {
                 HorizontalDivider(color = Color.LightGray, thickness = 0.5.dp)
             }
 
-            // Summary Section
             SummaryRow("मजदूरी राशि खर्च / Labor Wages:", "₹${invoice.laborWages.toInt()}", devanagariFont)
             SummaryRow("गाड़ी भाड़ा खर्च / Transport Freight:", "₹${invoice.transportFreight.toInt()}", devanagariFont)
             SummaryRow("छूट / Discount:", "- ₹${invoice.discount.toInt()}", devanagariFont)
-            
+
             Row(
-                modifier = Modifier.background(Color(0xFFFFF3F3)).padding(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFFFFF3F3))
+                    .padding(12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
@@ -383,62 +628,16 @@ fun InvoiceOutPutUI(invoice: Invoice) {
 
 @Composable
 fun SummaryRow(label: String, value: String, font: FontFamily) {
-    Row(modifier = Modifier.padding(vertical = 8.dp, horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp, horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
         Text(text = label, modifier = Modifier.weight(1f), textAlign = TextAlign.End, fontWeight = FontWeight.Bold, fontSize = 12.sp, fontFamily = font)
         Text(text = value, modifier = Modifier.width(80.dp), textAlign = TextAlign.End, fontWeight = FontWeight.Bold, fontSize = 13.sp)
     }
     HorizontalDivider(color = Color.LightGray, thickness = 0.5.dp)
-}
-
-fun createInvoicePdfFromCompose(context: Context, invoice: Invoice): File {
-    val activity = context as ComponentActivity
-    val density = context.resources.displayMetrics.density
-    val pageWidthPx = (595 * density).toInt()
-    val pageHeightPx = (842 * density).toInt()
-
-    val root = FrameLayout(context)
-    activity.addContentView(root, ViewGroup.LayoutParams(0, 0))
-
-    val composeView = ComposeView(context).apply {
-        setViewTreeLifecycleOwner(activity)
-        setViewTreeViewModelStoreOwner(activity)
-        setViewTreeSavedStateRegistryOwner(activity)
-        setContent {
-            Surface(color = Color.White) {
-                InvoiceOutPutUI(invoice = invoice)
-            }
-        }
-    }
-    root.addView(composeView)
-    composeView.measure(View.MeasureSpec.makeMeasureSpec(pageWidthPx, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(pageHeightPx, View.MeasureSpec.EXACTLY))
-    composeView.layout(0, 0, pageWidthPx, pageHeightPx)
-
-    val pdfDocument = PdfDocument()
-    val pageInfo = PdfDocument.PageInfo.Builder(pageWidthPx, pageHeightPx, 1).create()
-    val page = pdfDocument.startPage(pageInfo)
-    composeView.draw(page.canvas)
-    pdfDocument.finishPage(page)
-
-    val file = File(context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS), "Invoice_${invoice.invoiceNo}.pdf")
-    pdfDocument.writeTo(FileOutputStream(file))
-    pdfDocument.close()
-    root.removeView(composeView)
-    return file
-}
-
-fun sharePdf(context: Context, file: File) {
-    val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
-    val intent = Intent(Intent.ACTION_SEND).apply {
-        type = "application/pdf"
-        putExtra(Intent.EXTRA_STREAM, uri)
-        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-    }
-    context.startActivity(Intent.createChooser(intent, "Share Invoice PDF"))
-}
-
-@Composable
-private fun Text(text: String, modifier: Modifier, textAlign: TextAlign, fontSize: androidx.compose.ui.unit.TextUnit, modifier2: Modifier, fontFamily: FontFamily) {
-    Text(text = text, modifier = modifier.then(modifier2), textAlign = textAlign, fontSize = fontSize, fontFamily = fontFamily)
 }
 
 @Preview(showBackground = true, showSystemUi = true)

@@ -60,8 +60,16 @@ fun AppNavGraph() {
         composable(Routes.BOOKING) {
             CreateBookingScreen(viewModel = invoiceViewModel, navController = navController)
         }
-        composable(Routes.BOOKING_PREVIEW) {
-            BookingPreviewScreen(viewModel = invoiceViewModel, navController = navController)
+        composable(
+            route = Routes.BOOKING_PREVIEW,
+            arguments = listOf(navArgument("isReadOnly") { type = NavType.BoolType })
+        ) { backStackEntry ->
+            val isReadOnly = backStackEntry.arguments?.getBoolean("isReadOnly") ?: false
+            BookingPreviewScreen(
+                viewModel = invoiceViewModel,
+                navController = navController,
+                isReadOnly = isReadOnly
+            )
         }
         composable(
             route = Routes.INVOICE_PREVIEW,

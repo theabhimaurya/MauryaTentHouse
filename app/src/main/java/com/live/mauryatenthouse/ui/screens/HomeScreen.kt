@@ -255,7 +255,7 @@ fun HomeScreen(viewModel: InvoiceViewModel = viewModel(), navController: NavCont
                                 if (invoiceEntity.invoiceNo.startsWith("INV")) {
                                     navController.navigate(Routes.invoicePreview(true))
                                 } else {
-                                    navController.navigate(Routes.BOOKING_PREVIEW)
+                                    navController.navigate(Routes.bookingPreview(true))
                                 }
                             },
                             onDelete = { invoiceToDelete = invoiceEntity },
